@@ -1,245 +1,311 @@
+#!/usr/bin/python3
+# coding:utf-8
+import urllib3
+import json
+import time
+from datetime import datetime
+import traceback
+from collections import deque
 import os
-import sys
-import six
-import pause
 import requests
-import argparse
-import logging.config
-from selenium import webdriver
-from dateutil import parser as date_parser
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.support import expected_conditions as EC
 
-"""
+try:
+    import winsound
+except ImportError:
+    pass
+import platform
 
-This is an experimental script which attempts at utilizing some Nike APIs.
+from enum import Enum
 
-Current implementation:
-    1. Login with Selenium
-    2. Using the driver's stored cookies, make a Nike API request to add the desired item to your cart
-    3. Load the checkout page and place an order
-    
-Not sure if this will be any faster than the other script...
-
-"""
+urllib3.disable_warnings()
 
 
-logging.config.dictConfig({
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "default": {
-            "format": "%(asctime)s [PID %(process)d] [Thread %(thread)d] [%(levelname)s] [%(name)s] %(message)s"
-        }
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "level": "INFO",
-            "formatter": "default",
-            "stream": "ext://sys.stdout"
-        }
-    },
-    "root": {
-        "level": "INFO",
-        "handlers": [
-            "console"
-        ]
-    }
-})
+# http = urllib3.PoolManager()
+# appinitializationUrl = "https://unite.nike.com/appInitialization?appVersion=460&experienceVersion=378&uxid=com.nike.commerce.snkrs.ios&locale=zh_CN&backendEnvironment=identity&browser=Apple%20Computer%2C%20Inc.&os=undefined&mobile=true&native=true&visit=&visitor=&clientId=G64vA0b95ZruUtGk1K0FkAgaO3Ch30sj&status=success&uxId=com.nike.commerce.snkrs.ios&isAndroid=false&isIOS=true&isMobile=true&isNative=true&timeElapsed=203"
+# initHeaders = {
+#    'host':'unite.nike.com',
+#    'Content-Type':'application/json',
+#    'Origin':'https://s3.nikecdn.com',
+#    'Connection':'keep-alive',
+#    'X-NewRelic-ID':'VQYGVF5SCBADUVBRBgAGVg==',
+#    'Proxy-Connection':'keep-alive',
+#    'Accept':'*/*',
+#    'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 7_1_2 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Mobile/11D257',
+#    'Accept-Language':'en-us',
+#    'Accept-Encoding':'gzip, deflate',
+#    'Cookie':'s_vi=[CS]v1|2DB0A344852A167D-60000106C00000CE[CE]'
+# }
+#
+# resp = http.request("GET", appinitializationUrl,headers = initHeaders)
+# print(resp.getheaders().get('Set-Cookie'))
+#
+# print("cookies:",cookies)
+# loginUrl = "https://s3.nikecdn.com/login?appVersion=460&experienceVersion=378&uxid=com.nike.commerce.snkrs.ios&locale=zh_CN&backendEnvironment=identity&browser=Apple%20Computer%2C%20Inc.&os=undefined&mobile=true&native=true&visit=1&visitor=53f479c5-6cc7-4ef9-82a8-10fa4b02c95d"
+# loginHeaders = {
+#    'host':'s3.nikecdn.com',
+#    'Content-Type':'application/json',
+#    'Origin':'https://s3.nikecdn.com',
+#    'Connection':'keep-alive',
+#    'Proxy-Connection':'keep-alive',
+#    'Accept':'*/*',
+#    'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 7_1_2 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Mobile/11D257',
+#    'Accept-Language':'en-us',
+#    'Accept-Encoding':'gzip, deflate',
+# }
+# loginPayload={
+#    "username":"xxxxxxx",
+#    "password":"xxxxx",
+#    "client_id":"G64vA0b95ZruUtGk1K0FkAgaO3Ch30sj",
+#    "ux_id":"com.nike.commerce.snkrs.ios",
+#    "grant_type":"password"
+# }
+#
+# loginResp = http.request("POST", loginUrl, body=json.dumps(loginPayload))
+# cookies=loginResp.cookies.get_dict()
+# print("cookies:",cookies)
+# print(loginResp.data)
+#
+#
+#
+def formatTimeStr(str1):
+    return str1[0:10] + " " + str1[11:19]
 
-NIKE_HOME_URL = "https://www.nike.com/us/en_us/"
-NIKE_CHECKOUT_URL = "https://www.nike.com/checkout"
-NIKE_CART_API_URL = "https://secure-store.nike.com/us/services/jcartService"
-LOGGER = logging.getLogger()
+
+def getTime(str1):
+    return time.mktime(time.strptime(formatTimeStr(str1), "%Y-%m-%d %H:%M:%S"))
 
 
-def run(driver, username, password, product_id, sku_id, shoe_size, login_time=None, release_time=None,
-        page_load_timeout=None, screenshot_path=None, purchase=False, num_retries=None):
-    driver.maximize_window()
-    driver.set_page_load_timeout(page_load_timeout)
+def getLocalTimeStr(str1):
+    tm = getTime(str1)
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(tm + 28800)))
 
-    if login_time:
-        LOGGER.info("Waiting until login time: " + login_time)
-        pause.until(date_parser.parse(login_time))
 
+def addsepline():
+    print("-----------------------------------------------------------------------------------------------")
+
+
+def addseptag():
+    print("##################################################################")
+
+
+# copyright
+
+
+addsepline()
+print("SNKRSMonitor 2.2")
+print("做监控是为了方便各位sneakerhead，有问题请反馈，免费分享，请不要倒卖！！！！")
+print("更新地址:https://pan.baidu.com/s/1h7sodzyH2-Cx1BWM5DdDbg")
+print("作者:Niko(wechat:xvnk23)")
+addsepline()
+
+
+# URL
+
+
+class RegionURL(Enum):
+    cn = "&country=CN&language=zh-Hans"
+    us = "&country=US&language=en"
+    jp = "&country=JP&language=ja"
+
+
+class OrderBy(Enum):
+    published = "&orderBy=published"
+    updated = "&orderBy=lastUpdated"
+
+
+url = "https://api.nike.com/snkrs/content/v1/?"
+
+areaCode = input("请选择市场区域(1:美国,2:日本,3:中国):")
+if areaCode == "1":
+    url += RegionURL.us.value
+elif areaCode == "2":
+    url += RegionURL.jp.value
+else:
+    url += RegionURL.cn.value
+
+# Sneaker data
+print("正在抓取最新发布球鞋数据...")
+sneakers = []  # 球鞋缓存
+ludict = {}  #
+totalCount = 1000000
+
+
+# print sneaker data
+
+
+def printSneaker(data):
+    str1 = data["name"] + " " + data["title"]
     try:
-        login(driver=driver, username=username, password=password)
-    except Exception as e:
-        LOGGER.exception("Failed to login: " + str(e))
-        six.reraise(Exception, e, sys.exc_info()[2])
+        if data["product"]["colorDescription"]:
+            str1 += ("[" + data["product"]["colorDescription"] + "]")
+        if data["product"]["merchStatus"]:
+            str1 += ("[" + data["product"]["merchStatus"] + "]")
+    except:
+        pass
+    if data["restricted"]:
+        str1 += "[受限]"
+    print(str1)
 
-    if release_time:
-        LOGGER.info("Waiting until release time: " + release_time)
-        pause.until(date_parser.parse(release_time))
 
-    num_retries_attempted = 0
+def printSneakerDetail(data):
+    dict1 = {
+        "LEO": "LEO(限量)",
+        "DAN": "DAN(抽签)",
+    }
+    product = data["product"]
+    try:
+        name = product["title"] + "[" + product["colorDescription"] + "]"
+        if data["restricted"]:
+            name += "[受限]"
+        price = "价格:" + str(product["price"]["msrp"])
+        publicType = "发售方式:正常"
+        if product["publishType"] == "LAUNCH":
+            engine = product["selectionEngine"]
+            publicType = "发售方式:" + dict1[engine]
+        launchInfo = "不可购买"
+        if product["merchStatus"] == "ACTIVE" and product["available"] and "stopSellDate" not in product.keys():
+            launchInfo = "发售时间:" + getLocalTimeStr(product["startSellDate"])
+        print(name)
+        print(price)
+        print(publicType)
+        print(launchInfo)
+    except:
+        pass
+
+
+# request sneaker
+def requestSneakers(order, offset):
+    global totalCount
+    requrl = url + "&offset=" + str(offset) + order
+    http = urllib3.PoolManager()
+    r = http.request("GET", requrl)
+    shoes = []
+    try:
+        json_data = json.loads(r.data)
+        if len(sneakers) >= totalCount:
+            return []
+        totalCount = json_data["totalRecords"]
+        for data in json_data["threads"]:
+            shoes.append(data["id"])
+            ludict[data["id"]] = getTime(data["lastUpdatedDate"])
+            if offset == 0:
+                printSneaker(data)
+        return shoes
+    except:
+        print("\r访问服务器失败，3秒后重试")
+        time.sleep(3)
+        return requestSneakers(order, offset)
+
+
+for num in range(0, 10000):
+    k = num * 50
+    snkrs = requestSneakers(OrderBy.published.value, k)
+    if len(snkrs) == 0:
+        print("数据请求完毕,一共获取到", str(len(sneakers)), "条数据(只显示前50条)...")
+        break
+    sneakers.extend(snkrs)
+
+# user setup
+addsepline()
+keyword = "off white "
+frequency = 3
+warningTime = 5
+inputfreq = input("请设定接口访问频率(秒)，访问频率过快可能会导致服务器异常，默认是3，最小是1:")
+try:
+    frequency = int(inputfreq)
+except:
+    print("输入出错，按照默认频率请求")
+if frequency <= 0:
+    frequency = 3
+warning = input("请设定发现新款过后报警次数，默认是5，最小是1:")
+try:
+    warningTime = int(warning)
+except:
+    print("输入出错，按照默认次数报警")
+if warningTime <= 0:
+    warningTime = 5
+keyword = input("设定库存监控关键词,多个关键词用空格区分(eg:off white):")
+print("服务器实时请求接口中(" + str(frequency) + "秒每次)...")
+addseptag()
+
+
+# refresh request
+# def sneakerAvailable(snkdata):
+#    if data["restricted"]:
+#        return false
+#    product = data["product"]
+#    if [r]
+
+
+def warning_hints(tip_text):
+    sys_str = platform.system()
+    if sys_str == "Windows":
+        winsound.Beep(2600, 1000)
+        print(tip_text)
+    elif sys_str == "Linux":
+        os.system('say ' + tip_text)
+        print(tip_text)
+    else:
+        os.system('say ' + tip_text)
+        print(tip_text)
+
+
+def timer(n):
     while True:
         try:
-            try:
-                LOGGER.info("Adding item to cart")
-                add_item_to_cart(driver=driver, product_id=product_id, sku_id=sku_id, size=shoe_size)
-            except Exception as e:
-                LOGGER.exception("Failed to add item to cart " + str(e))
-                six.reraise(Exception, e, sys.exc_info()[2])
-
-            try:
-                LOGGER.info("Requesting page: " + NIKE_CHECKOUT_URL)
-                driver.get(NIKE_CHECKOUT_URL)
-            except TimeoutException:
-                LOGGER.info("Page load timed out but continuing anyway")
-
-            if purchase:
-                try:
-                    click_place_order_button(driver=driver)
-                except Exception as e:
-                    LOGGER.exception("Failed to click place order button: " + str(e))
-                    six.reraise(Exception, e, sys.exc_info()[2])
-
-            LOGGER.info("Purchased shoe")
+            http = urllib3.PoolManager()
+            requesturl = url + OrderBy.updated.value + "&offset=0"
+            r = http.request("GET", requesturl)
+            json_data = json.loads(r.data)
+            datas = json_data["threads"]
+        except:
+            print("\r请求失败", flush=True)
+            timer(frequency)
             break
-        except Exception:
-            if num_retries and num_retries_attempted < num_retries:
-                num_retries_attempted += 1
-                continue
+        for data in datas:
+            sneakerid = data["id"]
+            t_last_update_date = data["lastUpdatedDate"]
+            if sneakerid not in sneakers:
+                sneakers.append(sneakerid)
+                ludict[data["id"]] = getTime(t_last_update_date)
+                i = warningTime
+                while i > 0:
+                    warning_hints("\r《发现新款更新》")
+                    print("\r", "发现新款  更新时间:", getLocalTimeStr(t_last_update_date))
+                    printSneakerDetail(data)
+                    addseptag()
+                    i -= 1
             else:
-                break
-
-    if screenshot_path:
-        LOGGER.info("Saving screenshot")
-        driver.save_screenshot(screenshot_path)
-
-    driver.quit()
-
-
-def login(driver, username, password):
-    try:
-        LOGGER.info("Requesting page: " + NIKE_HOME_URL)
-        driver.get(NIKE_HOME_URL)
-    except TimeoutException:
-        LOGGER.info("Page load timed out but continuing anyway")
-
-    LOGGER.info("Waiting for login button to become clickable")
-    wait_until_clickable(driver=driver, xpath="//li[@js-hook='exp-join-login']/button")
-
-    LOGGER.info("Clicking login button")
-    driver.find_element_by_xpath("//li[@js-hook='exp-join-login']/button").click()
-
-    LOGGER.info("Waiting for login fields to become visible")
-    wait_until_visible(driver=driver, xpath="//input[@name='emailAddress']")
-
-    LOGGER.info("Entering username and password")
-    email_input = driver.find_element_by_xpath("//input[@name='emailAddress']")
-    email_input.clear()
-    email_input.send_keys(username)
-    password_input = driver.find_element_by_xpath("//input[@name='password']")
-    password_input.clear()
-    password_input.send_keys(password)
-
-    LOGGER.info("Logging in")
-    driver.find_element_by_xpath("//input[@value='LOG IN']").click()
-    wait_until_visible(driver=driver, xpath="//span[text()='My Account']")
-
-    LOGGER.info("Successfully logged in")
+                if getTime(t_last_update_date) > ludict[sneakerid]:
+                    ludict[sneakerid] = getTime(t_last_update_date)
+                    product = data["product"]
+                    print("\r", getLocalTimeStr(t_last_update_date), end=" ")
+                    t_str = "售罄"
+                    if product["merchStatus"] == "ACTIVE":
+                        if product["available"]:
+                            t_str = "库存更新("
+                            for sku in product["skus"]:
+                                if sku["available"]:
+                                    t_str += (sku["localizedSize"] + ",")
+                                    t_str = t_str[:-1]
+                                    t_str += ")"
+                    print(t_str, end=" ")
+                    printSneaker(data)
+                    seostr = data["seoSlug"]
+                    findstrs = keyword.split(" ")
+                    for key in findstrs:
+                        if seostr.find(key) != -1:
+                            printSneakerDetail(data)
+                            addseptag()
+                            i = warningTime
+                            while i > 0:
+                                warning_hints("\r《关注鞋款库存更新》")
+                                print("关注鞋款库存更新")
+                                i -= 1
+                            break
+            print("\r" + time.strftime("time :%Y-%m-%d %H:%M:%S", time.localtime(time.time())), end=" ")
+        time.sleep(frequency)
 
 
-def click_place_order_button(driver):
-    xpath = "//button[text()='Place Order']"
-
-    LOGGER.info("Waiting for place order button to become clickable")
-    wait_until_clickable(driver, xpath=xpath, duration=10)
-
-    LOGGER.info("Clicking place order button")
-    driver.find_element_by_xpath(xpath).click()
-
-
-def add_item_to_cart(driver, product_id, sku_id, size):
-    cookies = driver.get_cookies()
-    params = {
-        "action": "addItem",
-        "lang_locale": "en_US",
-        "catalogId": "1",
-        "productId": product_id,
-        "qty": "1",
-        "price": "",
-        "skuAndSize": "{}:{}".format(sku_id, size),
-        "rt": "json",
-        "view": "3",
-        "skuId": sku_id,
-        "displaySize": "10"
-    }
-    headers = {
-        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36",
-        "origin": "https://www.nike.com",
-        "accept-encoding": "gzip, deflate, br",
-        "accept-language": "en-US,en;q=0.9",
-        "accept": "*/*",
-        "scheme": "https"
-    }
-    response = requests.get(url=NIKE_CART_API_URL,
-                            params=params, headers=headers, cookies=cookies)
-    if response.status_code != 200:
-        raise Exception("Request to add item to cart failed (code {}): {}".format(
-            response.status_code, response.text))
-
-
-def wait_until_clickable(driver, xpath=None, class_name=None, duration=10000, frequency=0.01):
-    if xpath:
-        WebDriverWait(driver, duration, frequency).until(EC.element_to_be_clickable((By.XPATH, xpath)))
-    elif class_name:
-        WebDriverWait(driver, duration, frequency).until(EC.element_to_be_clickable((By.CLASS_NAME, class_name)))
-
-
-def wait_until_visible(driver, xpath=None, class_name=None, duration=10000, frequency=0.01):
-    if xpath:
-        WebDriverWait(driver, duration, frequency).until(EC.visibility_of_element_located((By.XPATH, xpath)))
-    elif class_name:
-        WebDriverWait(driver, duration, frequency).until(EC.visibility_of_element_located((By.CLASS_NAME, class_name)))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--username", required=True)
-    parser.add_argument("--password", required=True)
-    parser.add_argument("--product-id", required=True)
-    parser.add_argument("--sku-id", required=True)
-    parser.add_argument("--shoe-size", required=True)
-    parser.add_argument("--login-time", default=None)
-    parser.add_argument("--release-time", default=None)
-    parser.add_argument("--screenshot-path", default=None)
-    parser.add_argument("--page-load-timeout", type=int, default=2)
-    parser.add_argument("--driver-type", default="firefox", choices=("firefox", "chrome"))
-    parser.add_argument("--headless", action="store_true")
-    parser.add_argument("--purchase", action="store_true")
-    parser.add_argument("--num-retries", type=int, default=1)
-    args = parser.parse_args()
-
-    driver = None
-    if args.driver_type == "firefox":
-        options = webdriver.FirefoxOptions()
-        if args.headless:
-            options.add_argument("--headless")
-        executable_path = None
-        if sys.platform == "darwin":
-            executable_path = "./bin/geckodriver_mac"
-        elif "linux" in sys.platform:
-            executable_path = "./bin/geckodriver_linux"
-        driver = webdriver.Firefox(executable_path=executable_path, firefox_options=options, log_path=os.devnull)
-    elif args.driver_type == "chrome":
-        options = webdriver.ChromeOptions()
-        if args.headless:
-            options.add_argument("headless")
-        executable_path = None
-        if sys.platform == "darwin":
-            executable_path = "./bin/chromedriver_mac"
-        elif "linux" in sys.platform:
-            executable_path = "./bin/chromedriver_linux"
-        driver = webdriver.Chrome(executable_path=executable_path, chrome_options=options)
-
-    run(driver=driver, username=args.username, password=args.password, product_id=args.product_id,
-        sku_id=args.sku_id, shoe_size=args.shoe_size, login_time=args.login_time, release_time=args.release_time,
-        page_load_timeout=args.page_load_timeout, screenshot_path=args.screenshot_path,
-        purchase=args.purchase, num_retries=args.num_retries)
+timer(3)
+# SNKRSMonitor
